@@ -18,10 +18,9 @@ export type PresetType =
 export type AnimatedGroupProps = {
   children: ReactNode;
   className?: string;
-  variants?: {
-    container?: Variants;
-    item?: Variants;
-  };
+  // Variants typing can be strict across different motion versions — accept any to avoid
+  // transient type mismatches when consumers pass custom variant objects.
+  variants?: any;
   preset?: PresetType;
   as?: React.ElementType;
   asChild?: React.ElementType;
@@ -95,9 +94,9 @@ const presetVariants: Record<PresetType, Variants> = {
   },
 };
 
-const addDefaultVariants = (variants: Variants) => ({
-  hidden: { ...defaultItemVariants.hidden, ...variants.hidden },
-  visible: { ...defaultItemVariants.visible, ...variants.visible },
+const addDefaultVariants = (variants: any) => ({
+  hidden: { ...defaultItemVariants.hidden, ...(variants?.hidden || {}) },
+  visible: { ...defaultItemVariants.visible, ...(variants?.visible || {}) },
 });
 
 function AnimatedGroup({
@@ -115,29 +114,36 @@ function AnimatedGroup({
   const containerVariants = variants?.container || selectedVariants.container;
   const itemVariants = variants?.item || selectedVariants.item;
 
-  const MotionComponent = React.useMemo(
-    () => motion.create(as as keyof JSX.IntrinsicElements),
-    [as]
-  );
-  const MotionChild = React.useMemo(
-    () => motion.create(asChild as keyof JSX.IntrinsicElements),
-    [asChild]
-  );
+  // motion.create typing varies between motion packages/versions and
+  // keyof JSX.IntrinsicElements can include number|symbol in some TS lib configs.
+  // Use a runtime-safe resolution and cast to `any` for JSX use to avoid
+  // transient type mismatches while preserving behavior.
+  const MotionComponent = React.useMemo(() => {
+    const m: any = motion as any
+    // prefer a create factory if available
+    if (typeof m.create === 'function') return m.create(as as any)
+    // fallback to intrinsic lookup (e.g. m.div) or component wrapper
+    return m[as as any] ?? m.div
+  }, [as]) as any
+
+  const MotionChild = React.useMemo(() => {
+    const m: any = motion as any
+    if (typeof m.create === 'function') return m.create(asChild as any)
+    return m[asChild as any] ?? m.div
+  }, [asChild]) as any
+
+  const MC = MotionComponent as any
+  const MChild = MotionChild as any
 
   return (
-    <MotionComponent
-      initial='hidden'
-      animate='visible'
-      variants={containerVariants}
-      className={className}
-    >
+    <MC initial="hidden" animate="visible" variants={containerVariants} className={className}>
       {React.Children.map(children, (child, index) => (
-        <MotionChild key={index} variants={itemVariants}>
+        <MChild key={String(index)} variants={itemVariants}>
           {child}
-        </MotionChild>
+        </MChild>
       ))}
-    </MotionComponent>
-  );
+    </MC>
+  )
 }
 
 export { AnimatedGroup };
